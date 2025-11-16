@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=0.8.2
+Name=st
+GenericName=suckless terminal
+Comment=Suckless terminal
+Icon=st
+Exec=st
+Terminal=false
+X-Desktop-File-Install-Version=0.28
