@@ -42,6 +42,8 @@ install: st
 	sed "s/VERSION/$(VERSION)/g" < st.1 > $(DESTDIR)$(MANPREFIX)/man1/st.1
 	chmod 644 $(DESTDIR)$(MANPREFIX)/man1/st.1
 	tic -sx st.info
+	sudo cp ./st.desktop /usr/share/applications/st.desktop
+	sudo cp ./st.svg /usr/share/icons/st.svg
 	@echo Please see the README file regarding the terminfo entry of st.
 
 uninstall:
