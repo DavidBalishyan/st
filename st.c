@@ -415,6 +415,18 @@ selinit(void)
 }
 
 int
+selidle(void)
+{
+	return sel.mode == SEL_IDLE;
+}
+
+int
+selempty(void)
+{
+	return sel.mode == SEL_EMPTY;
+}
+
+int
 tlinelen(int y)
 {
 	int i = term.col;
@@ -431,7 +443,6 @@ tlinelen(int y)
 void
 selstart(int col, int row, int snap)
 {
-	selclear();
 	sel.mode = SEL_EMPTY;
 	sel.type = SEL_REGULAR;
 	sel.alt = IS_SET(MODE_ALTSCREEN);

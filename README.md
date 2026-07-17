@@ -1,9 +1,9 @@
 # st (personal build)
 
-A patched build of [suckless st](https://st.suckless.org/) 0.9.3, themed with
+A patched build of [suckless st](https://st.suckless.org) 0.9.3, themed with
 Tokyo Night and JetBrainsMono Nerd Font to match my Alacritty setup. st is a
-lightweight terminal emulator for X. It has no runtime configuration file; its
-behaviour is compiled in from `config.h`.
+lightweight terminal emulator for X. No runtime config file; behaviour is
+compiled in from `config.h`. Copy and paste matches Alacritty's defaults.
 
 ## Features
 
@@ -37,12 +37,14 @@ padding, and a default size of 100x30.
 | `Ctrl`+`Shift`+`C` / `V` | Copy or paste clipboard |
 | `Shift`+`Insert` | Paste primary selection |
 | Middle click | Paste primary selection |
-| `Ctrl`+`Shift`+`Y` | Paste primary selection |
+| Right click | Expand selection to word under cursor |
 | `Ctrl`+`Shift`+`PageUp` / `PageDown` | Increase or decrease font size |
 | `Ctrl`+`Shift`+`Home` | Reset font size |
 | `Ctrl`+`Shift`+`Num_Lock` | Toggle numlock (application keypad) |
 
-Hold `Alt` while dragging to select rectangular text.
+Single-clicking preserves the current selection. The selection is only cleared
+when you start dragging to make a new one. Hold `Alt` while dragging to select
+rectangular text.
 
 ## Requirements
 
