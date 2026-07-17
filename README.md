@@ -14,7 +14,6 @@ On top of stock st, this build applies these patches:
 | **scrollback** (+ mouse, + altscreen) | 10,000-line history buffer. Scroll with the bare mouse wheel or `Shift+PageUp`/`PageDown`. |
 | **ligatures** | Programming ligatures via HarfBuzz (`->`, `=>`, `!=`, `>=`, `===`, and so on). |
 | **boxdraw** | Box-drawing and Braille glyphs drawn by st itself, so TUI borders line up without gaps (btop, lazygit, tmux). |
-| **alpha** | Background transparency (`alpha = 0.95`; needs a running compositor). |
 | **undercurl** | Colored and curly underlines for editor diagnostics and spellcheck. |
 | **font2** | Fallback fonts for glyphs the main font lacks (Noto Color Emoji, Noto Sans CJK). |
 | **anysize** | Resizes to any pixel size, so no empty border gap when tiled or maximized. |
@@ -51,7 +50,6 @@ rectangular text.
 - Xlib headers (`libx11-dev`), `libxft-dev`
 - `fontconfig`, `freetype2`
 - `harfbuzz` for ligatures (`libharfbuzz-dev`)
-- A compositor such as `picom` for background transparency
 - **JetBrainsMono Nerd Font** installed
   ([download](https://www.nerdfonts.com/font-downloads)), or change the `font`
   line in `config.h`
@@ -90,9 +88,6 @@ changes live. Rebuild with `make` after editing `config.h`. To start over from
 the patched defaults, run `rm config.h && make`.
 
 ## Notes
-
-Transparency only shows when a compositor is running. Without one, the
-background is opaque.
 
 The terminal supports undercurl, but applications have to emit it. In Neovim,
 enable undercurl in your terminal or colorscheme setup.

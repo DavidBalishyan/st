@@ -517,10 +517,8 @@ bpress(XEvent *e)
 		xsel.tclick1 = now;
 
 		/*
-		 * On single click with an existing selection, don't
-		 * start a new selection (like alacritty). The
-		 * selection will be cleared in bmotion() if the user
-		 * actually drags.
+		 * Don't start a new selection on single click.
+		 * bmotion() handles the drag case.
 		 */
 		if (snap == 0 && !selidle())
 			return;
@@ -528,8 +526,8 @@ bpress(XEvent *e)
 		selstart(evcol(e), evrow(e), snap);
 	} else if (btn == Button3) {
 		/*
-		 * Right-click expands the current selection to the
-		 * clicked position, like alacritty.
+		 * Right-click extends the selection to the word at
+		 * the cursor.
 		 */
 		if (selidle()) {
 			selextend(evcol(e), evrow(e), SEL_REGULAR, 0);
@@ -758,16 +756,15 @@ bmotion(XEvent *e)
 	}
 
 	/*
-	 * Clear existing selection only when a drag actually starts,
-	 * not on a click without motion (like alacritty).
+	 * Clear the selection only when a drag begins,
+	 * not on bare clicks.
 	 */
 	if (selempty())
 		selclear();
 
 	/*
-	 * If selection was not started on Button1 press (existing
-	 * selection was preserved), start a new selection here when
-	 * the user actually drags.
+	 * If selstart() was skipped on Button1 press, start
+	 * a new selection here when the user drags.
 	 */
 	if (selidle() && (buttons & 1)) {
 		selclear();
