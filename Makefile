@@ -15,6 +15,7 @@ help:
 	@echo '  clean      remove build artifacts'
 	@echo '  install    install st, man page, terminfo and desktop entry to $$(PREFIX)'
 	@echo '  uninstall  remove installed files'
+	@echo '  reinstall  re-install installed files'
 	@echo '  dist       create a source tarball'
 	@echo '  help       show this message'
 
@@ -62,4 +63,6 @@ uninstall:
 	rm -f $(DESTDIR)$(APPPREFIX)/st.desktop
 	rm -f $(DESTDIR)$(MANPREFIX)/man1/st.1
 
-.PHONY: all help clean dist install uninstall
+reinstall: uninstall install
+
+.PHONY: all help clean dist install uninstall reinstall
