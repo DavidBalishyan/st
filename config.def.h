@@ -154,6 +154,13 @@ unsigned int defaultbg = 259;
 unsigned int defaultcs = 256;
 static unsigned int defaultrcs = 257;
 
+/* Built-in tab bar (shown with two or more tabs). Colors index colorname. */
+unsigned int tabmax = 16;
+static unsigned int tabbarfg = 7;
+static unsigned int tabbarbg = 259;
+static unsigned int tabactivefg = 259;
+static unsigned int tabactivebg = 4;
+
 /*
  * Default shape of cursor
  * 2: Block ("█")
@@ -226,6 +233,20 @@ static Shortcut shortcuts[] = {
 	{ TERMMOD,              XK_Num_Lock,    numlock,        {.i =  0} },
 	{ ShiftMask,            XK_Page_Up,     kscrollup,      {.i = -1} },
 	{ ShiftMask,            XK_Page_Down,   kscrolldown,    {.i = -1} },
+	{ TERMMOD,              XK_Return,      tabnew,         {.i =  0} },
+	{ MODKEY|ShiftMask,     XK_Return,      tabnew,         {.i =  0} },
+	{ MODKEY|ShiftMask,     XK_w,           tabclose,       {.i =  0} },
+	{ MODKEY|ShiftMask,     XK_Left,        tabprev,        {.i =  0} },
+	{ MODKEY|ShiftMask,     XK_Right,       tabnext,        {.i =  0} },
+	{ MODKEY,               XK_1,           tabselect,      {.i =  0} },
+	{ MODKEY,               XK_2,           tabselect,      {.i =  1} },
+	{ MODKEY,               XK_3,           tabselect,      {.i =  2} },
+	{ MODKEY,               XK_4,           tabselect,      {.i =  3} },
+	{ MODKEY,               XK_5,           tabselect,      {.i =  4} },
+	{ MODKEY,               XK_6,           tabselect,      {.i =  5} },
+	{ MODKEY,               XK_7,           tabselect,      {.i =  6} },
+	{ MODKEY,               XK_8,           tabselect,      {.i =  7} },
+	{ MODKEY,               XK_9,           tabselect,      {.i =  8} },
 };
 
 /*

@@ -17,6 +17,7 @@ On top of stock st, this build applies these patches:
 | **undercurl** | Colored and curly underlines for editor diagnostics and spellcheck. |
 | **font2** | Fallback fonts for glyphs the main font lacks (Noto Color Emoji, Noto Sans CJK). |
 | **anysize** | Resizes to any pixel size, so no empty border gap when tiled or maximized. |
+| **built-in tabs** | Independent shell sessions in one `st` window, with a native tab bar and no `tabbed` dependency. |
 | **a desktop entry** | Installs `st.desktop` so st shows up in your application launcher. |
 
 Appearance: Tokyo Night palette, `JetBrainsMono Nerd Font` at point size 15, 6px
@@ -44,6 +45,19 @@ padding, and a default size of 100x30.
 Single-clicking preserves the current selection. The selection is only cleared
 when you start dragging to make a new one. Hold `Alt` while dragging to select
 rectangular text.
+
+### Tabs
+| Key or gesture | Action |
+|----------------|--------|
+| `Ctrl`+`Shift`+`Return` or `Alt`+`Shift`+`Return` | Open a new tab using the original shell or `-e` command |
+| `Alt`+`Shift`+`W` | Close the active tab |
+| `Alt`+`Shift`+`Left` / `Right` | Select the previous or next tab |
+| `Alt`+`1` through `9` | Select tab 1 through 9 |
+| Left click a tab | Select it |
+
+The top bar appears only when two or more tabs are open. Each tab has its own
+terminal state, scrollback, selection, and PTY; closing the final tab closes
+the window. New tabs are unavailable in `-l` serial-line mode.
 
 ## Requirements
 
@@ -87,6 +101,9 @@ All configuration lives in `config.h`: theme, font, geometry, and keybindings.
 changes live. Rebuild with `make` after editing `config.h`. To start over from
 the patched defaults, run `rm config.h && make`.
 
+The built-in tab settings are `tabmax` and the four `tab*` color indices near
+the terminal palette in `config.h`.
+
 ## Notes
 
 The terminal supports undercurl, but applications have to emit it. In Neovim,
@@ -100,4 +117,3 @@ when the window is resized. The buffer size is set by `HISTSIZE` in `st.c`.
 - <https://st.suckless.org>
 - <https://st.suckless.org/patches>
 - <https://github.com/folke/tokyonight.nvim>
-

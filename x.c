@@ -4,6 +4,8 @@
 #include <limits.h>
 #include <locale.h>
 #include <signal.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/select.h>
 #include <time.h>
 #include <unistd.h>
@@ -178,6 +180,8 @@ static void xsetenv(void);
 static void xseturgency(int);
 static int evcol(XEvent *);
 static int evrow(XEvent *);
+static int tabbarheight(void);
+static int tabbarclick(XEvent *);
 
 static void expose(XEvent *);
 static void visibility(XEvent *);
@@ -234,6 +238,7 @@ static void (*handler[LASTEvent])(XEvent *) = {
 static DC dc;
 static XWindow xw;
 static XSelection xsel;
+static int tabbarpress;
 static TermWindow win;
 
 /* Font Ring Cache */
@@ -358,6 +363,32 @@ evrow(XEvent *e)
 	int y = e->xbutton.y - win.vborderpx;
 	LIMIT(y, 0, win.th - 1);
 	return y / win.ch;
+}
+
+int
+tabbarheight(void)
+{
+	return tabcount() > 1 ? win.ch : 0;
+}
+
+int
+tabbarclick(XEvent *e)
+{
+	Arg arg;
+	int x, top;
+
+	if (!tabbarheight())
+		return 0;
+	top = win.vborderpx - tabbarheight();
+	if (e->xbutton.y < top || e->xbutton.y >= win.vborderpx)
+		return 0;
+
+	x = e->xbutton.x - win.hborderpx;
+	if (x >= 0 && x < win.tw) {
+		arg.i = x * tabcount() / win.tw;
+		tabselect(&arg);
+	}
+	return 1;
 }
 
 void
@@ -488,6 +519,11 @@ bpress(XEvent *e)
 	int btn = e->xbutton.button;
 	struct timespec now;
 	int snap;
+
+	if (btn == Button1 && tabbarclick(e)) {
+		tabbarpress = 1;
+		return;
+	}
 
 	if (1 <= btn && btn <= 11)
 		buttons |= 1 << (btn-1);
@@ -735,6 +771,10 @@ brelease(XEvent *e)
 
 	if (1 <= btn && btn <= 11)
 		buttons &= ~(1 << (btn-1));
+	if (btn == Button1 && tabbarpress) {
+		tabbarpress = 0;
+		return;
+	}
 
 	if (IS_SET(MODE_MOUSE) && !(e->xbutton.state & forcemousemod)) {
 		mousereport(e);
@@ -750,6 +790,9 @@ brelease(XEvent *e)
 void
 bmotion(XEvent *e)
 {
+	if (tabbarpress)
+		return;
+
 	if (IS_SET(MODE_MOUSE) && !(e->xbutton.state & forcemousemod)) {
 		mousereport(e);
 		return;
@@ -777,24 +820,31 @@ bmotion(XEvent *e)
 void
 cresize(int width, int height)
 {
-	int col, row;
+	int col, row, tabheight;
 
 	if (width != 0)
 		win.w = width;
 	if (height != 0)
 		win.h = height;
 
+	tabheight = tabbarheight();
 	col = (win.w - 2 * borderpx) / win.cw;
-	row = (win.h - 2 * borderpx) / win.ch;
+	row = (win.h - 2 * borderpx - tabheight) / win.ch;
 	col = MAX(1, col);
 	row = MAX(1, row);
 
 	win.hborderpx = (win.w - col * win.cw) / 2;
-	win.vborderpx = (win.h - row * win.ch) / 2;
+	win.vborderpx = (win.h - row * win.ch - tabheight) / 2 + tabheight;
 
-	tresize(col, row);
 	xresize(col, row);
-	ttyresize(win.tw, win.th);
+	tabresizeall(col, row);
+}
+
+void
+xreconfigtabs(void)
+{
+	cresize(0, 0);
+	xhints();
 }
 
 void
@@ -936,7 +986,7 @@ xhints(void)
 	sizeh->width_inc = 1;
 	sizeh->base_height = 2 * borderpx;
 	sizeh->base_width = 2 * borderpx;
-	sizeh->min_height = win.ch + 2 * borderpx;
+	sizeh->min_height = win.ch + tabbarheight() + 2 * borderpx;
 	sizeh->min_width = win.cw + 2 * borderpx;
 	if (xw.isfixed) {
 		sizeh->flags |= PMaxSize;
@@ -2206,44 +2256,53 @@ xsetenv(void)
 	setenv("WINDOWID", buf, 1);
 }
 
+static void
+xsettextprop(const char *p, Atom atom, int icon)
+{
+	XTextProperty prop;
+	char *text;
+
+	if (!p || !p[0])
+		p = opt_title ? opt_title : "st";
+	text = (char *)p;
+	if (Xutf8TextListToTextProperty(xw.dpy, &text, 1,
+	                                XUTF8StringStyle, &prop) != Success)
+		return;
+	if (icon)
+		XSetWMIconName(xw.dpy, xw.win, &prop);
+	else
+		XSetWMName(xw.dpy, xw.win, &prop);
+	XSetTextProperty(xw.dpy, xw.win, &prop, atom);
+	XFree(prop.value);
+}
+
+void
+xapplytabtitle(void)
+{
+	xsettextprop(tabtitle(tabactive()), xw.netwmname, 0);
+	xsettextprop(tabicontitle(tabactive()), xw.netwmiconname, 1);
+}
+
 void
 xseticontitle(char *p)
 {
-	XTextProperty prop;
-	DEFAULT(p, opt_title);
-
-	if (p[0] == '\0')
-		p = opt_title;
-
-	if (Xutf8TextListToTextProperty(xw.dpy, &p, 1, XUTF8StringStyle,
-	                                &prop) != Success)
-		return;
-	XSetWMIconName(xw.dpy, xw.win, &prop);
-	XSetTextProperty(xw.dpy, xw.win, &prop, xw.netwmiconname);
-	XFree(prop.value);
+	if (p)
+		tabseticontitle(p);
+	xapplytabtitle();
 }
 
 void
 xsettitle(char *p)
 {
-	XTextProperty prop;
-	DEFAULT(p, opt_title);
-
-	if (p[0] == '\0')
-		p = opt_title;
-
-	if (Xutf8TextListToTextProperty(xw.dpy, &p, 1, XUTF8StringStyle,
-	                                &prop) != Success)
-		return;
-	XSetWMName(xw.dpy, xw.win, &prop);
-	XSetTextProperty(xw.dpy, xw.win, &prop, xw.netwmname);
-	XFree(prop.value);
+	if (p)
+		tabsettitle(p);
+	xapplytabtitle();
 }
 
 int
 xstartdraw(void)
 {
-	return IS_SET(MODE_VISIBLE);
+	return IS_SET(MODE_VISIBLE) && tabcurrent() == tabactive();
 }
 
 void
@@ -2278,6 +2337,41 @@ xdrawline(Line line, int x1, int y1, int x2)
 }
 
 void
+xdrawtabs(void)
+{
+	XRectangle clip;
+	char label[256];
+	int i, n, top, x0, x1, textx, baseline;
+	Color *fg, *bg;
+
+	if (!(n = tabcount()) || !tabbarheight())
+		return;
+
+	top = win.vborderpx - tabbarheight();
+	baseline = top + (win.ch - dc.font.height) / 2 + dc.font.ascent;
+	for (i = 0; i < n; i++) {
+		x0 = win.hborderpx + i * win.tw / n;
+		x1 = win.hborderpx + (i + 1) * win.tw / n;
+		fg = &dc.col[i == tabactive() ? tabactivefg : tabbarfg];
+		bg = &dc.col[i == tabactive() ? tabactivebg : tabbarbg];
+		XftDrawRect(xw.draw, bg, x0, top, x1 - x0, win.ch);
+
+		textx = x0 + 4;
+		if (textx >= x1)
+			continue;
+		snprintf(label, sizeof(label), "%d: %.240s", i + 1, tabtitle(i));
+		clip.x = textx;
+		clip.y = top;
+		clip.width = x1 - textx - 2;
+		clip.height = win.ch;
+		XftDrawSetClipRectangles(xw.draw, 0, 0, &clip, 1);
+		XftDrawStringUtf8(xw.draw, fg, dc.font.match, textx, baseline,
+		                  (const FcChar8 *)label, strlen(label));
+		XftDrawSetClip(xw.draw, 0);
+	}
+}
+
+void
 xfinishdraw(void)
 {
 	XCopyArea(xw.dpy, xw.buf, xw.win, dc.gc, 0, 0, win.w,
@@ -2293,8 +2387,8 @@ xximspot(int x, int y)
 	if (xw.ime.xic == NULL)
 		return;
 
-	xw.ime.spot.x = borderpx + x * win.cw;
-	xw.ime.spot.y = borderpx + (y + 1) * win.ch;
+	xw.ime.spot.x = win.hborderpx + x * win.cw;
+	xw.ime.spot.y = win.vborderpx + (y + 1) * win.ch;
 
 	XSetICValues(xw.ime.xic, XNPreeditAttributes, xw.ime.spotlist, NULL);
 }
@@ -2518,7 +2612,7 @@ run(void)
 	XEvent ev;
 	int w = win.w, h = win.h;
 	fd_set rfd;
-	int xfd = XConnectionNumber(xw.dpy), ttyfd, xev, drawing;
+	int fd, maxfd, ptyevent, xfd = XConnectionNumber(xw.dpy), xev, drawing;
 	struct timespec seltv, *tv, now, lastblink, trigger;
 	double timeout;
 
@@ -2538,13 +2632,13 @@ run(void)
 		}
 	} while (ev.type != MapNotify);
 
-	ttyfd = ttynew(opt_line, shell, opt_io, opt_cmd);
+	tabsstart();
 	cresize(w, h);
 
 	for (timeout = -1, drawing = 0, lastblink = (struct timespec){0};;) {
 		FD_ZERO(&rfd);
-		FD_SET(ttyfd, &rfd);
 		FD_SET(xfd, &rfd);
+		maxfd = MAX(xfd, tabfdset(&rfd));
 
 		if (XPending(xw.dpy))
 			timeout = 0;  /* existing events might not set xfd */
@@ -2553,15 +2647,20 @@ run(void)
 		seltv.tv_nsec = 1E6 * (timeout - 1E3 * seltv.tv_sec);
 		tv = timeout >= 0 ? &seltv : NULL;
 
-		if (pselect(MAX(xfd, ttyfd)+1, &rfd, NULL, NULL, tv, NULL) < 0) {
+		if (pselect(maxfd + 1, &rfd, NULL, NULL, tv, NULL) < 0) {
 			if (errno == EINTR)
 				continue;
 			die("select failed: %s\n", strerror(errno));
 		}
 		clock_gettime(CLOCK_MONOTONIC, &now);
 
-		if (FD_ISSET(ttyfd, &rfd))
-			ttyread();
+		tabreap();
+		ptyevent = 0;
+		for (fd = 0; fd <= maxfd; fd++)
+			if (fd != xfd && FD_ISSET(fd, &rfd)) {
+				tabreadfd(fd);
+				ptyevent = 1;
+			}
 
 		xev = 0;
 		while (XPending(xw.dpy)) {
@@ -2584,7 +2683,7 @@ run(void)
 		 * maximum latency intervals during `cat huge.txt`, and perfect
 		 * sync with periodic updates from animations/key-repeats/etc.
 		 */
-		if (FD_ISSET(ttyfd, &rfd) || xev) {
+		if (ptyevent || xev) {
 			if (!drawing) {
 				trigger = now;
 				drawing = 1;
@@ -2694,7 +2793,7 @@ run:
 	XSetLocaleModifiers("");
 	cols = MAX(cols, 1);
 	rows = MAX(rows, 1);
-	tnew(cols, rows);
+	tabsinit(cols, rows, opt_line, shell, opt_io, opt_cmd, opt_title);
 	xinit(cols, rows);
 	xsetenv();
 	selinit();

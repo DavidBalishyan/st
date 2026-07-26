@@ -1,6 +1,7 @@
 /* See LICENSE for license details. */
 
 #include <stdint.h>
+#include <sys/select.h>
 #include <sys/types.h>
 
 /* macros */
@@ -104,6 +105,26 @@ size_t ttyread(void);
 void ttyresize(int, int);
 void ttywrite(const char *, size_t, int);
 
+/* Built-in tab/session manager. */
+void tabsinit(int, int, const char *, char *, const char *, char **, const char *);
+void tabsstart(void);
+void tabnew(const Arg *);
+void tabclose(const Arg *);
+void tabnext(const Arg *);
+void tabprev(const Arg *);
+void tabselect(const Arg *);
+void tabresizeall(int, int);
+int tabfdset(fd_set *);
+int tabreadfd(int);
+void tabreap(void);
+int tabcount(void);
+int tabactive(void);
+const char *tabtitle(int);
+const char *tabicontitle(int);
+void tabsettitle(const char *);
+void tabseticontitle(const char *);
+int tabcurrent(void);
+
 void resettitle(void);
 
 void selclear(void);
@@ -142,4 +163,5 @@ extern unsigned int tabspaces;
 extern unsigned int defaultfg;
 extern unsigned int defaultbg;
 extern unsigned int defaultcs;
+extern unsigned int tabmax;
 extern const int boxdraw, boxdraw_bold, boxdraw_braille;

@@ -159,6 +159,24 @@ Copy the selected text to the clipboard selection.
 .TP
 .B Ctrl-Shift-v
 Paste from the clipboard selection.
+.TP
+.B Ctrl-Shift-Return / Alt-Shift-Return
+Open a new built-in tab using the same shell or command as the initial tab.
+.TP
+.B Alt-Shift-w
+Close the active built-in tab.
+.TP
+.B Alt-Shift-Left / Alt-Shift-Right
+Select the previous or next built-in tab.
+.TP
+.B Alt-1 through Alt-9
+Select built-in tab 1 through 9.
+.PP
+The tab bar is shown only when two or more tabs are open. Each tab has an
+independent terminal state and pseudo-terminal. Left-click a tab to select it.
+New tabs are unavailable when
+.B -l
+is used.
 .SH CUSTOMIZATION
 .B st
 can be customized by creating a custom config.h and (re)compiling the source
@@ -168,10 +186,8 @@ See the LICENSE file for the authors.
 .SH LICENSE
 See the LICENSE file for the terms of redistribution.
 .SH SEE ALSO
-.BR tabbed (1),
 .BR utmp (1),
 .BR stty (1),
 .BR scroll (1)
 .SH BUGS
 See the TODO file in the distribution.
-

@@ -161,6 +161,21 @@ typedef struct {
 	int narg;              /* nb of args */
 } STREscape;
 
+typedef struct {
+	Term term;
+	Selection sel;
+	CSIEscape csiescseq;
+	STREscape strescseq;
+	TCursor savedcursor[2];
+	char readbuf[BUFSIZ];
+	int readbuflen;
+	int iofd;
+	int cmdfd;
+	pid_t pid;
+	char *title;
+	char *icontitle;
+} Tab;
+
 static void execsh(char *, char **);
 static void stty(char **);
 static void sigchld(int);
@@ -212,6 +227,11 @@ static int32_t tdefcolor(const int *, int *, int);
 static void tdeftran(char);
 static void tstrsequence(uchar);
 
+static void tabsave(void);
+static void tabload(int);
+static void tabremove(int, int);
+static void tabfree(Tab *);
+
 static void drawregion(int, int, int, int);
 
 static void selnormalize(void);
@@ -234,8 +254,20 @@ static Selection sel;
 static CSIEscape csiescseq;
 static STREscape strescseq;
 static int iofd = 1;
-static int cmdfd;
+static int cmdfd = -1;
 static pid_t pid;
+static TCursor savedcursor[2];
+static char readbuf[BUFSIZ];
+static int readbuflen;
+static Tab *tablist;
+static int ntab;
+static int tabselected;
+static int tabcurrentidx = -1;
+static int tabcols, tabrows;
+static const char *tabline, *tabout, *tabinitialtitle;
+static char *tabcmd;
+static char **tabargs;
+static volatile sig_atomic_t sigchldpending;
 
 static const uchar utfbyte[UTF_SIZ + 1] = {0x80,    0, 0xC0, 0xE0, 0xF0};
 static const uchar utfmask[UTF_SIZ + 1] = {0xC0, 0x80, 0xE0, 0xF0, 0xF8};
@@ -288,6 +320,353 @@ xstrdup(const char *s)
 		die("strdup: %s\n", strerror(errno));
 
 	return p;
+}
+
+static void
+tabsave(void)
+{
+	Tab *tab;
+
+	if (tabcurrentidx < 0)
+		return;
+	tab = &tablist[tabcurrentidx];
+	tab->term = term;
+	tab->sel = sel;
+	tab->csiescseq = csiescseq;
+	tab->strescseq = strescseq;
+	memcpy(tab->savedcursor, savedcursor, sizeof(savedcursor));
+	memcpy(tab->readbuf, readbuf, sizeof(readbuf));
+	tab->readbuflen = readbuflen;
+	tab->iofd = iofd;
+	tab->cmdfd = cmdfd;
+	tab->pid = pid;
+}
+
+static void
+tabload(int index)
+{
+	Tab *tab;
+
+	if (index == tabcurrentidx)
+		return;
+	tabsave();
+	tab = &tablist[index];
+	term = tab->term;
+	sel = tab->sel;
+	csiescseq = tab->csiescseq;
+	strescseq = tab->strescseq;
+	memcpy(savedcursor, tab->savedcursor, sizeof(savedcursor));
+	memcpy(readbuf, tab->readbuf, sizeof(readbuf));
+	readbuflen = tab->readbuflen;
+	iofd = tab->iofd;
+	cmdfd = tab->cmdfd;
+	pid = tab->pid;
+	tabcurrentidx = index;
+}
+
+static void
+tabfree(Tab *tab)
+{
+	int i;
+
+	for (i = 0; i < tab->term.row; i++) {
+		free(tab->term.line[i]);
+		free(tab->term.alt[i]);
+	}
+	for (i = 0; i < HISTSIZE; i++)
+		free(tab->term.hist[i]);
+	free(tab->term.line);
+	free(tab->term.alt);
+	free(tab->term.dirty);
+	free(tab->term.tabs);
+	free(tab->strescseq.buf);
+	free(tab->title);
+	free(tab->icontitle);
+}
+
+void
+tabsinit(int cols, int rows, const char *line, char *cmd, const char *out,
+         char **args, const char *title)
+{
+	unsigned int max = MAX(tabmax, 1);
+
+	tablist = xmalloc(max * sizeof(*tablist));
+	memset(tablist, 0, max * sizeof(*tablist));
+	tablist[0].cmdfd = -1;
+	tablist[0].iofd = 1;
+	tablist[0].title = xstrdup(title ? title : "st");
+	tablist[0].icontitle = xstrdup(title ? title : "st");
+	ntab = 1;
+	tabselected = 0;
+	tabcols = cols;
+	tabrows = rows;
+	tabline = line;
+	tabout = out;
+	tabcmd = cmd;
+	tabargs = args;
+	tabinitialtitle = title;
+	tabcurrentidx = 0;
+	term = (Term){0};
+	sel = (Selection){0};
+	csiescseq = (CSIEscape){0};
+	strescseq = (STREscape){0};
+	memset(savedcursor, 0, sizeof(savedcursor));
+	memset(readbuf, 0, sizeof(readbuf));
+	readbuflen = 0;
+	iofd = 1;
+	cmdfd = -1;
+	pid = 0;
+	tnew(cols, rows);
+	tabsave();
+}
+
+void
+tabsstart(void)
+{
+	tabload(0);
+	ttynew(tabline, tabcmd, tabout, tabargs);
+	tabsave();
+}
+
+int
+tabcount(void)
+{
+	return ntab;
+}
+
+int
+tabactive(void)
+{
+	return tabselected;
+}
+
+int
+tabcurrent(void)
+{
+	return tabcurrentidx;
+}
+
+const char *
+tabtitle(int index)
+{
+	return BETWEEN(index, 0, ntab - 1) && tablist[index].title ?
+	       tablist[index].title : "st";
+}
+
+const char *
+tabicontitle(int index)
+{
+	return BETWEEN(index, 0, ntab - 1) && tablist[index].icontitle ?
+	       tablist[index].icontitle : tabtitle(index);
+}
+
+void
+tabsettitle(const char *title)
+{
+	Tab *tab;
+
+	if (tabcurrentidx < 0)
+		return;
+	tab = &tablist[tabcurrentidx];
+	free(tab->title);
+	tab->title = xstrdup(title ? title : "st");
+}
+
+void
+tabseticontitle(const char *title)
+{
+	Tab *tab;
+
+	if (tabcurrentidx < 0)
+		return;
+	tab = &tablist[tabcurrentidx];
+	free(tab->icontitle);
+	tab->icontitle = xstrdup(title ? title : "st");
+}
+
+static void
+tabremove(int index, int hup)
+{
+	Tab removed;
+
+	if (!BETWEEN(index, 0, ntab - 1))
+		return;
+	tabsave();
+	removed = tablist[index];
+	if (hup && removed.pid > 0)
+		kill(removed.pid, SIGHUP);
+	if (removed.cmdfd >= 0)
+		close(removed.cmdfd);
+	if (removed.iofd > 2 && removed.iofd != removed.cmdfd)
+		close(removed.iofd);
+	tabfree(&removed);
+	memmove(&tablist[index], &tablist[index + 1],
+	        (ntab - index - 1) * sizeof(*tablist));
+	ntab--;
+	if (ntab == 0)
+		exit(0);
+	if (index < tabselected)
+		tabselected--;
+	else if (tabselected >= ntab)
+		tabselected = ntab - 1;
+	tabcurrentidx = -1;
+	term = (Term){0};
+	sel = (Selection){0};
+	csiescseq = (CSIEscape){0};
+	strescseq = (STREscape){0};
+	memset(savedcursor, 0, sizeof(savedcursor));
+	readbuflen = 0;
+	iofd = 1;
+	cmdfd = -1;
+	pid = 0;
+	tabload(tabselected);
+	xreconfigtabs();
+	xapplytabtitle();
+	redraw();
+}
+
+void
+tabnew(const Arg *arg)
+{
+	int index;
+
+	(void)arg;
+	if (tabline || ntab >= (int)MAX(tabmax, 1)) {
+		xbell();
+		return;
+	}
+	tabsave();
+	index = ntab++;
+	tablist[index] = (Tab){ .iofd = 1, .cmdfd = -1 };
+	tablist[index].title = xstrdup(tabinitialtitle ? tabinitialtitle : "st");
+	tablist[index].icontitle = xstrdup(tabinitialtitle ? tabinitialtitle : "st");
+	tabcurrentidx = -1;
+	term = (Term){0};
+	sel = (Selection){0};
+	csiescseq = (CSIEscape){0};
+	strescseq = (STREscape){0};
+	memset(savedcursor, 0, sizeof(savedcursor));
+	memset(readbuf, 0, sizeof(readbuf));
+	readbuflen = 0;
+	iofd = 1;
+	cmdfd = -1;
+	pid = 0;
+	tabcurrentidx = index;
+	tnew(tabcols, tabrows);
+	ttynew(NULL, tabcmd, NULL, tabargs);
+	tabsave();
+	tabselected = index;
+	xreconfigtabs();
+	xapplytabtitle();
+	redraw();
+}
+
+void
+tabclose(const Arg *arg)
+{
+	(void)arg;
+	tabremove(tabselected, 1);
+}
+
+void
+tabselect(const Arg *arg)
+{
+	int index = arg->i;
+
+	if (!BETWEEN(index, 0, ntab - 1) || index == tabselected)
+		return;
+	tabload(index);
+	tabselected = index;
+	xapplytabtitle();
+	redraw();
+}
+
+void
+tabnext(const Arg *arg)
+{
+	Arg next = { .i = (tabselected + 1) % ntab };
+
+	(void)arg;
+	tabselect(&next);
+}
+
+void
+tabprev(const Arg *arg)
+{
+	Arg prev = { .i = (tabselected + ntab - 1) % ntab };
+
+	(void)arg;
+	tabselect(&prev);
+}
+
+void
+tabresizeall(int cols, int rows)
+{
+	int i;
+
+	tabcols = cols;
+	tabrows = rows;
+	for (i = 0; i < ntab; i++) {
+		tabload(i);
+		tresize(cols, rows);
+		ttyresize(cols, rows);
+	}
+	tabload(tabselected);
+}
+
+int
+tabfdset(fd_set *fds)
+{
+	int i, maxfd = -1;
+
+	for (i = 0; i < ntab; i++) {
+		if (tablist[i].cmdfd < 0)
+			continue;
+		FD_SET(tablist[i].cmdfd, fds);
+		maxfd = MAX(maxfd, tablist[i].cmdfd);
+	}
+	return maxfd;
+}
+
+int
+tabreadfd(int fd)
+{
+	int i;
+	size_t n;
+
+	for (i = 0; i < ntab; i++)
+		if (tablist[i].cmdfd == fd)
+			break;
+	if (i == ntab)
+		return 0;
+	tabload(i);
+	n = ttyread();
+	if (n == 0) {
+		tabremove(i, 0);
+		return 0;
+	}
+	tabsave();
+	tabload(tabselected);
+	return 1;
+}
+
+void
+tabreap(void)
+{
+	int stat;
+	pid_t child;
+
+	if (!sigchldpending)
+		return;
+	sigchldpending = 0;
+	while ((child = waitpid(-1, &stat, WNOHANG)) > 0) {
+		for (int i = 0; i < ntab; i++)
+			if (tablist[i].pid == child) {
+				tablist[i].pid = 0;
+				if (tabcurrentidx == i)
+					pid = 0;
+			}
+	}
 }
 
 size_t
@@ -733,25 +1112,8 @@ execsh(char *cmd, char **args)
 void
 sigchld(int a)
 {
-	int stat, olderrno;
-	pid_t p;
-
-	olderrno = errno;
-	do {
-		p = waitpid(pid, &stat, WNOHANG);
-	} while (p < 0 && errno == EINTR);
-
-	if (p < 0)
-		_exit(1);
-
-	if (pid != p) {
-		errno = olderrno;
-		return;
-	}
-
-	if ((WIFEXITED(stat) && WEXITSTATUS(stat)) || WIFSIGNALED(stat))
-		_exit(1);
-	_exit(0);
+	(void)a;
+	sigchldpending = 1;
 }
 
 void
@@ -843,25 +1205,27 @@ ttynew(const char *line, char *cmd, const char *out, char **args)
 size_t
 ttyread(void)
 {
-	static char buf[BUFSIZ];
-	static int buflen = 0;
 	int ret, written;
 
 	/* append read bytes to unprocessed bytes */
-	ret = read(cmdfd, buf+buflen, LEN(buf)-buflen);
+	ret = read(cmdfd, readbuf + readbuflen, LEN(readbuf) - readbuflen);
 
 	switch (ret) {
 	case 0:
-		exit(0);
+		return 0;
 	case -1:
+		if (errno == EINTR || errno == EAGAIN)
+			return 1;
+		if (errno == EIO)
+			return 0;
 		die("couldn't read from shell: %s\n", strerror(errno));
 	default:
-		buflen += ret;
-		written = twrite(buf, buflen, 0);
-		buflen -= written;
+		readbuflen += ret;
+		written = twrite(readbuf, readbuflen, 0);
+		readbuflen -= written;
 		/* keep any incomplete UTF-8 byte sequence for the next call */
-		if (buflen > 0)
-			memmove(buf, buf + written, buflen);
+		if (readbuflen > 0)
+			memmove(readbuf, readbuf + written, readbuflen);
 		return ret;
 	}
 }
@@ -959,6 +1323,9 @@ ttyresize(int tw, int th)
 {
 	struct winsize w;
 
+	if (cmdfd < 0)
+		return;
+
 	w.ws_row = term.row;
 	w.ws_col = term.col;
 	w.ws_xpixel = tw;
@@ -970,8 +1337,12 @@ ttyresize(int tw, int th)
 void
 ttyhangup(void)
 {
-	/* Send SIGHUP to shell */
-	kill(pid, SIGHUP);
+	int i;
+
+	tabsave();
+	for (i = 0; i < ntab; i++)
+		if (tablist[i].pid > 0)
+			kill(tablist[i].pid, SIGHUP);
 }
 
 int
@@ -1028,14 +1399,13 @@ tfulldirt(void)
 void
 tcursor(int mode)
 {
-	static TCursor c[2];
 	int alt = IS_SET(MODE_ALTSCREEN);
 
 	if (mode == CURSOR_SAVE) {
-		c[alt] = term.c;
+		savedcursor[alt] = term.c;
 	} else if (mode == CURSOR_LOAD) {
-		term.c = c[alt];
-		tmoveto(c[alt].x, c[alt].y);
+		term.c = savedcursor[alt];
+		tmoveto(savedcursor[alt].x, savedcursor[alt].y);
 	}
 }
 
@@ -2792,7 +3162,8 @@ tresize(int col, int row)
 void
 resettitle(void)
 {
-	xsettitle(NULL);
+	tabsettitle(tabinitialtitle ? tabinitialtitle : "st");
+	xapplytabtitle();
 }
 
 void
@@ -2832,6 +3203,7 @@ draw(void)
 				term.line[term.ocy], term.col);
 	term.ocx = cx;
 	term.ocy = term.c.y;
+	xdrawtabs();
 	xfinishdraw();
 	if (ocx != term.ocx || ocy != term.ocy)
 		xximspot(term.ocx, term.ocy);
