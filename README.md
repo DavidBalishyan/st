@@ -52,7 +52,7 @@ rectangular text.
 | `Ctrl`+`Shift`+`Return` or `Alt`+`Shift`+`Return` | Open a new tab using the original shell or `-e` command |
 | `Alt`+`Shift`+`W` | Close the active tab |
 | `Alt`+`Shift`+`Left` / `Right` | Select the previous or next tab |
-| `Alt`+`1` through `9` | Select tab 1 through 9 |
+| `Ctrl`+`1` through `9` | Select tab 1 through 9 |
 | Left click a tab | Select it |
 
 The top bar appears only when two or more tabs are open. Each tab has its own
